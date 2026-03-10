@@ -1,0 +1,21 @@
+name: transview_env
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy
+      - pandas
+      - matplotlib
+      - opencv-python
+      - torch==2.8.0
+      - torchvision==0.23.0
+      - ultralytics==8.3.203
+      - onnx==1.19.0
+      - onnxruntime-gpu==1.19.2  # macOS에서는 onnxruntime==1.19.2 로 변경
+      - scipy
+      - tqdm
+      - pyyaml
+      - pillow
+      - sympy
+      - jinja2
+      - open3d
