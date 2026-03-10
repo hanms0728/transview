@@ -192,4 +192,4 @@ class cx cy cz length width yaw_deg pitch_deg roll_deg    # 9열
 
 ## References
 
-- Gilg, J. et al., *"2.5D Object Detection for Intelligent Roadside Infrastructure"*, KIT (DigiT4TAF) — [GitHub](https://github.com/2.5d-object-detection)
+- Gilg, J. et al., *"2.5D Object Detection for Intelligent Roadside Infrastructure"*, KIT (DigiT4TAF) — [GitLab](https://gitlab.kit.edu/kit/aifb/ATKS/public/digit4taf/2.5d-object-detection)
