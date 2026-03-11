@@ -2,9 +2,7 @@
 
 ## 모델 구조
 
-일반적인 2D detection은 바운딩 박스(cx, cy, w, h)를 출력하지만, 이 모델은 차량 바닥면의 3점(중심 + 전면 꼭짓점 2개)을 이미지 좌표로 직접 예측한다. 이 3점으로부터 차량의 위치, 크기, 방향을 모두 복원할 수 있기 때문에 "2.5D"라고 부른다.
-
-YOLO11m의 backbone + FPN은 그대로 가져오고, detection head만 제거하여 이 3점 예측용 커스텀 헤드(TriHead)로 교체한 구조.
+YOLO11m의 backbone + FPN은 그대로 가져오고, detection head만 제거하여 2.5D 예측용 커스텀 헤드(TriHead)로 교체한 구조.
 
 ### Backbone — YOLO11m + FPN
 

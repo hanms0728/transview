@@ -1,4 +1,3 @@
-# evaluation_utils.py
 import math
 from typing import List, Dict, Any, Sequence
 
@@ -11,7 +10,6 @@ from src.geometry_utils import parallelogram_from_triangle, aabb_of_poly4, iou_a
 
 
 def iou_polygon(poly_a: np.ndarray, poly_b: np.ndarray) -> float:
-    """Convex polygon IoU using cv2.intersectConvexConvex."""
     try:
         pa = poly_a.astype(np.float32)
         pb = poly_b.astype(np.float32)
@@ -53,7 +51,6 @@ def orientation_error_deg(pred_tri: np.ndarray, gt_tri: np.ndarray) -> float:
     return math.degrees(diff)
 
 def _aabb_metrics(boxA_xywh, boxB_xywh):
-    """네 기존 iou_aabb_xywh() 재사용 + IoS만 추가 계산"""
     iou = iou_aabb_xywh(boxA_xywh, boxB_xywh)
 
     ax0, ay0, aw, ah = boxA_xywh
@@ -93,7 +90,6 @@ def _nms_iou_or_ios(dets, iou_thr=0.5, contain_thr=None, topk=300):
 
 
 def _resolve_conf_threshold(conf_cfg, cam_id) -> float:
-    """Return a float confidence threshold for the given cam id."""
     if isinstance(conf_cfg, dict):
         if cam_id in conf_cfg:
             return float(conf_cfg[cam_id])
@@ -106,16 +102,8 @@ def _resolve_conf_threshold(conf_cfg, cam_id) -> float:
     return float(conf_cfg)
 
 
-# ---------------------------
-# Temporal smoothing helpers
-# ---------------------------
 def _orientation_vec(tri: np.ndarray) -> np.ndarray:
-    """
-    차량 방향 벡터.
-    - p0: 바닥 중심
-    - p1, p2: 앞쪽 두 꼭짓점
-    -> p0에서 p1/p2 중점으로 향하는 벡터를 사용, 길이가 너무 짧으면 p1->p2로 대체.
-    """
+    """p0→(p1,p2 중점) 방향벡터. 너무 짧으면 p1→p2로 대체."""
     mid = 0.5 * (tri[1] + tri[2])
     v = mid - tri[0]
     if np.linalg.norm(v) < 1e-6:
@@ -124,10 +112,7 @@ def _orientation_vec(tri: np.ndarray) -> np.ndarray:
 
 
 def normalize_triangle(tri: np.ndarray, ref_dir: np.ndarray = None):
-    """
-    삼각형 순서를 시계/반시계 한쪽으로 통일하고, ref_dir과 반대면 p1/p2를 스왑해 뒤집힘을 교정.
-    반환: (정규화 tri, 업데이트된 ref_dir)
-    """
+    """삼각형 꼭짓점 순서 통일 + ref_dir 기준 방향 교정"""
     tri = np.asarray(tri, dtype=np.float32).copy()
     if tri.shape != (3, 2):
         raise ValueError(f"tri shape must be (3,2), got {tri.shape}")
@@ -148,10 +133,7 @@ def normalize_triangle(tri: np.ndarray, ref_dir: np.ndarray = None):
 
 
 class EMATracker:
-    """
-    IoU 그리디 매칭 + EMA 스무딩 기반 간단 트래커.
-    det는 tri 또는 poly4를 포함해야 하며, 출력에 track_id/스무딩된 tri/poly4를 추가한다.
-    """
+    """IoU 매칭 + EMA 스무딩 트래커"""
     def __init__(self, iou_thresh: float = 0.3, alpha: float = 0.7, max_miss: int = 5):
         self.iou_thresh = float(iou_thresh)
         self.alpha = float(alpha)
@@ -392,11 +374,7 @@ def _decode_predictions_impl(
 
 
 def decode_predictions(*args, **kwargs):
-    """Backward-compatible wrapper for decoding predictions.
-
-    기존 버전(outputs,strides,...)과 신규 버전(cam_id,outputs,strides,...) 호출 모두 지원한다.
-    cam_id가 주어지지 않으면 기본값 0을 사용한다.
-    """
+    """cam_id 유무에 따라 신/구 시그니처 모두 호환"""
 
     positional_opt_names: Sequence[str] = (
         "clip_cells",

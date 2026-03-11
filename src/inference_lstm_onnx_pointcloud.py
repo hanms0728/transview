@@ -14,7 +14,7 @@ import torch
 from tqdm import tqdm
 import onnxruntime as ort
 
-# ====== 기존 유틸 ======
+# --- 유틸 임포트
 from src.geometry_utils import parallelogram_from_triangle, tiny_filter_on_dets
 from src.evaluation_utils import (
     decode_predictions,
@@ -24,7 +24,7 @@ from src.evaluation_utils import (
     iou_polygon,
 )
 
-# ====== Matplotlib (optional) ======
+# --- Matplotlib (optional)
 try:
     import matplotlib
     matplotlib.use("Agg")
@@ -39,9 +39,7 @@ except Exception:
     _MATPLOTLIB_AVAILABLE = False
 
 
-# =========================
-# 클래스별/필터링 유틸
-# =========================
+# --- 클래스별/필터링 유틸
 def parse_class_conf_map(conf_str: Optional[str]) -> dict:
     """Parse '0:0.5,1:0.3' -> {0:0.5,1:0.3}"""
     if not conf_str:
@@ -85,9 +83,7 @@ def filter_dets_by_class_and_conf(dets: List[dict], allowed_classes: Optional[se
     return filtered
 
 
-# =========================
-# I/O helpers (라벨/BEV/시각화)
-# =========================
+# --- I/O helpers (라벨/BEV/시각화)
 _CLASS_COLOR_TABLE = [
     (0, 0, 255),    # red (BGR)
     (0, 165, 255),  # orange
@@ -137,7 +133,7 @@ def poly_from_tri(tri: np.ndarray) -> np.ndarray:
     return parallelogram_from_triangle(p0, p1, p2).astype(np.float32)
 
 
-# ====== Homography BEV (txt/npy) ======
+# --- Homography BEV (txt/npy)
 def apply_homography(points: np.ndarray, H: np.ndarray) -> np.ndarray:
     pts = np.asarray(points, dtype=np.float64)
     if pts.size == 0:
@@ -306,9 +302,7 @@ def normalize_angle_deg(angle: float) -> float:
     return angle
 
 
-# =========================
-# BEV 시각화 (2D 이미지)
-# =========================
+# --- BEV 시각화 (2D 이미지)
 def _prepare_bev_canvas(polygons: List[np.ndarray], padding: float = 1.0, target: float = 800.0):
     if not polygons:
         return None
@@ -433,13 +427,7 @@ def compute_bev_properties(tri_xy, tri_z=None,
                            use_roll: bool = False,
                            roll_threshold_deg: float = 2.0,
                            roll_clamp_deg: float = 8.0):
-    """
-    tri_xy: (3,2) with p0 (rear), p1/p2 (front-left/right)
-    tri_z:  (3,) optional Z at the same three points
-    returns:
-      center(x,y), length, width, yaw(deg), front_edge(p1,p2),
-      cz (float), pitch_deg, roll_deg
-    """
+    """tri_xy (3,2), tri_z (3,) optional -> center, length, width, yaw, front_edge, cz, pitch, roll"""
     p0, p1, p2 = np.asarray(tri_xy, dtype=np.float64)
     if not np.all(np.isfinite(tri_xy)):
         return None
@@ -494,16 +482,7 @@ def compute_bev_properties_3d(
     xy_scale: float = 1.0,
     z_scale: float = 1.0
 ):
-    """
-    3D 평면 위(Local frame)에서 '실제 공간상의' length/width를 계산.
-    tri_xy: (3,2) with p0(rear), p1/p2(front-left/right)  [주의] 여기는 현재 BEV 스케일이 적용된 XY일 수 있음
-    tri_z : (3,)  z for each point (원 단위)
-    xy_scale: tri_xy에 적용된 스케일(예: --bev-scale). pitch/roll 계산에서 분모 보정용
-    z_scale : Z에 적용하고 싶은 스케일(보통 1.0)
-    returns:
-      center(x,y), length, width, yaw(deg), front_edge(p1,p2),
-      cz (float), pitch_deg, roll_deg
-    """
+    """3D 평면에서 실제 공간상의 length/width 계산. xy_scale로 BEV 스케일 보정."""
     if tri_xy is None or tri_z is None:
         return None
     tri_xy = np.asarray(tri_xy, dtype=np.float64)
@@ -511,20 +490,20 @@ def compute_bev_properties_3d(
     if tri_xy.shape != (3,2) or tri_z.shape != (3,) or not (np.all(np.isfinite(tri_xy)) and np.all(np.isfinite(tri_z))):
         return None
 
-    # BEV용 XY는 시각화를 위해 scale이 들어있을 수 있음 → 물리 계산 전 보정(원 단위 복원)
+    # 물리 계산 전 스케일 보정
     sxy = float(xy_scale) if xy_scale is not None else 1.0
     sz  = float(z_scale)  if z_scale  is not None else 1.0
     if sxy <= 0: sxy = 1.0
     if sz  <= 0: sz  = 1.0
 
     tri_xy_unscaled = tri_xy / sxy
-    tri_z_scaled    = tri_z * sz  # 필요 시 Z에도 스케일
+    tri_z_scaled    = tri_z * sz
 
-    # 3D 포인트 구성(원 단위 좌표계)
-    P0 = np.array([tri_xy_unscaled[0,0], tri_xy_unscaled[0,1], tri_z_scaled[0]], dtype=np.float64)  # rear
-    P1 = np.array([tri_xy_unscaled[1,0], tri_xy_unscaled[1,1], tri_z_scaled[1]], dtype=np.float64)  # front-left
-    P2 = np.array([tri_xy_unscaled[2,0], tri_xy_unscaled[2,1], tri_z_scaled[2]], dtype=np.float64)  # front-right
-    Pf = 0.5 * (P1 + P2)  # front-center
+    # 3D 포인트: P0(rear), P1(front-left), P2(front-right)
+    P0 = np.array([tri_xy_unscaled[0,0], tri_xy_unscaled[0,1], tri_z_scaled[0]], dtype=np.float64)
+    P1 = np.array([tri_xy_unscaled[1,0], tri_xy_unscaled[1,1], tri_z_scaled[1]], dtype=np.float64)
+    P2 = np.array([tri_xy_unscaled[2,0], tri_xy_unscaled[2,1], tri_z_scaled[2]], dtype=np.float64)
+    Pf = 0.5 * (P1 + P2)
 
     # 평면 법선
     n = np.cross(P1 - P0, P2 - P0)
@@ -533,7 +512,7 @@ def compute_bev_properties_3d(
         return None
     n /= n_norm
 
-    # 길이/폭 축(평면 내 직교)
+    # 길이/폭 축
     L_hat = Pf - P0
     Ln = np.linalg.norm(L_hat)
     if Ln < 1e-9:
@@ -545,27 +524,27 @@ def compute_bev_properties_3d(
         return None
     W_hat /= Wn
 
-    # 실제 공간 길이/폭(원 단위)
+    # 실제 길이/폭
     length_m = abs(np.dot(Pf - P0, L_hat))
     width_m  = abs(np.dot(P2 - P1, W_hat))
 
-    # 4번째 코너/센터(Z는 원 단위)
+    # 4번째 코너/센터
     P3 = P1 + (P2 - P0)
     center_3d = 0.25 * (P0 + P1 + P2 + P3)
     cz = float(center_3d[2])
 
-    # yaw: XY 투영 헤딩(시각화 좌표계 기준) — 시각화 좌표계에 맞추려면 다시 sxy를 곱한 tri_xy 사용
+    # yaw
     yaw = math.degrees(math.atan2(L_hat[1], L_hat[0]))
     yaw = (yaw + 180) % 360 - 180
 
-    # pitch: front-center vs rear 고저차 / '실제 길이'  → 분모가 스케일 영향 안받도록 length_m 사용
+    # pitch
     v = Pf - P0
     v = Pf - P0
-    horiz_len = np.linalg.norm([v[0], v[1]])          # ✅ 수평 길이
-    pitch_rad = math.atan2(v[2], max(horiz_len, 1e-9)) # ✅ 올바른 경사각
+    horiz_len = np.linalg.norm([v[0], v[1]])
+    pitch_rad = math.atan2(v[2], max(horiz_len, 1e-9))
     pitch_deg = float(np.clip(math.degrees(pitch_rad), -pitch_clamp_deg, pitch_clamp_deg))
 
-    # roll: 좌/우 고저차 / '실제 폭'
+    # roll
     roll_deg = 0.0
     if use_roll and width_m > 1e-6:
         dz_lr = (P2[2] - P1[2])
@@ -575,20 +554,17 @@ def compute_bev_properties_3d(
             roll_deg = 0.0
         roll_deg = float(np.clip(roll_deg, -roll_clamp_deg, roll_clamp_deg))
 
-    # 2D 시각화/IoU용 폴리곤은 현재 tri_xy(스케일 적용된 좌표)를 그대로 사용
+    # 2D 시각화용 폴리곤
     p0 = tri_xy[0]; p1 = tri_xy[1]; p2 = tri_xy[2]
     poly_xy = parallelogram_from_triangle(p0, p1, p2).astype(np.float32)
     front_edge = (tri_xy[1], tri_xy[2])
     center_xy = poly_xy.mean(axis=0)
 
-    # 길이/폭 반환은 '실제 길이/폭'(원 단위). 필요하면 상위에서 스케일 변환해서 쓰세요.
+    # 실제 단위 길이/폭 반환
     return (float(center_xy[0]), float(center_xy[1])), float(length_m), float(width_m), float(yaw), front_edge, float(cz), float(pitch_deg), float(roll_deg)
 
 def write_bev_labels(save_path: str, bev_dets: List[dict], write_3d: bool = True):
-    """
-    write_3d=True → 'class cx cy cz length width yaw pitch roll'
-    write_3d=False → legacy 'class cx cy length width yaw'
-    """
+    """write_3d=True면 cz/pitch/roll 포함, False면 legacy 포맷"""
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     lines = []
     for det in bev_dets:
@@ -642,17 +618,9 @@ def evaluate_single_image_bev(preds_bev: List[dict], gt_tris_bev: np.ndarray, io
     return records, int(matched.sum())
 
 
-# =========================
-# LUT 기반 보간 (핵심 수정 부)
-# =========================
+# --- LUT 기반 보간
 def _lut_pick_valid_mask(lut):
-    """
-    LUT에서 사용할 valid mask를 우선순위로 선택:
-    1) ground_valid_mask
-    2) valid_mask
-    3) floor_mask
-    4) fallback: isfinite(X)&isfinite(Y)
-    """
+    """LUT에서 valid mask 선택 (floor_mask > ground_valid_mask > valid_mask > fallback)"""
     X = np.asarray(lut["X"])
     Y = np.asarray(lut["Y"])
     H, W = X.shape
@@ -673,15 +641,7 @@ def _lut_pick_valid_mask(lut):
 
 
 def _bilinear_lut_xy(lut, u, v, min_valid_corners: int = 3, boundary_eps: float = 1e-3):
-    """
-    lut: dict-like with 'X','Y', and a valid mask
-    u,v: 1D float arrays (pixel coords, 0..W-1 / 0..H-1)
-    returns: Xw, Yw, valid (same shape as u/v)
-
-    - 경계 클램프(boundary_eps)로 보간 인덱스가 범위를 벗어나는 것을 방지
-    - 4코너 AND 대신, 최소 min_valid_corners개가 유효하면
-      유효 코너만 가중치 재정규화 후 보간 허용
-    """
+    """LUT에서 (u,v) 픽셀좌표를 bilinear 보간하여 (Xw, Yw, valid) 반환. min_valid_corners개 이상 유효 코너면 허용."""
     X = np.asarray(lut["X"])
     Y = np.asarray(lut["Y"])
     V = _lut_pick_valid_mask(lut)
@@ -690,7 +650,7 @@ def _bilinear_lut_xy(lut, u, v, min_valid_corners: int = 3, boundary_eps: float 
     u = np.asarray(u, dtype=np.float64).ravel()
     v = np.asarray(v, dtype=np.float64).ravel()
 
-    # --- 경계 클램프 ---
+    # 경계 클램프
     eps = float(boundary_eps)
     if not np.isfinite(eps) or eps <= 0:
         eps = 1e-3
@@ -753,7 +713,7 @@ def _bilinear_lut_xy(lut, u, v, min_valid_corners: int = 3, boundary_eps: float 
 
 
 def _bilinear_lut_xyz(lut, u, v, min_valid_corners: int = 3, boundary_eps: float = 1e-3):
-    """XY 보간에 Z까지 확장. LUT에 Z가 없으면 Z는 NaN."""
+    """XY 보간 + Z 확장. LUT에 Z 없으면 NaN."""
     Xw, Yw, valid = _bilinear_lut_xy(
         lut, u, v,
         min_valid_corners=min_valid_corners,
@@ -803,14 +763,7 @@ def _bilinear_lut_xyz(lut, u, v, min_valid_corners: int = 3, boundary_eps: float
 
 def tris_img_to_bev_by_lut(tris_img: np.ndarray, lut_data: dict, bev_scale: float = 1.0,
                             min_valid_corners: int = 3, boundary_eps: float = 1e-3):
-    """
-    이미지 좌표의 삼각형들(tris_img: [N,3,2])을 LUT(npz)의 (X,Y,Z)로 보간해 BEV 평면으로 투영.
-    - bilinear 보간 (X,Y,Z), 유효하지 않은 점이 있는 tri는 버림
-    returns:
-        tris_bev_xy: (N,3,2)
-        tris_bev_z:  (N,3)
-        tri_ok:      (N,) bool
-    """
+    """이미지 좌표 삼각형 [N,3,2]을 LUT로 BEV 투영. -> (tris_bev_xy, tris_bev_z, tri_ok)"""
     if tris_img.size == 0:
         return (np.zeros((0,3,2), dtype=np.float32),
                 np.zeros((0,3), dtype=np.float32),
@@ -839,28 +792,21 @@ def tris_img_to_bev_by_lut(tris_img: np.ndarray, lut_data: dict, bev_scale: floa
     return tris_bev_xy, Zw.astype(np.float32), tri_ok.astype(bool)
 
 
-# =========================
-# ONNX temporal runner
-# =========================
+# --- ONNX temporal runner
 class ONNXTemporalRunner:
-    """
-    ConvLSTM/GRU가 들어간 ONNX 모델 실행기.
-    - 입력: images (1,3,H,W)  + (선택) h_in[, c_in]
-    - 출력: 스케일별 reg/obj/cls + (선택) h_out[, c_out]
-    """
+    """ConvLSTM/GRU ONNX 모델 실행기. hidden state carry + seq reset 지원."""
     def __init__(self, onnx_path, providers=("CUDAExecutionProvider","CPUExecutionProvider"),
                  state_stride_hint: int = 32, default_hidden_ch: int = 256):
         self.sess = ort.InferenceSession(onnx_path, providers=list(providers))
         self.inputs = {i.name: i for i in self.sess.get_inputs()}
         self.outs = [o.name for o in self.sess.get_outputs()]
 
-        # 입력 이름 추론
+        # 입력/출력 이름 매핑
         cand_x = [n for n in self.inputs if n.lower() in ("images","image","input")]
         self.x_name = cand_x[0] if cand_x else list(self.inputs.keys())[0]
         self.h_name = next((n for n in self.inputs if "h_in" in n.lower()), None)
         self.c_name = next((n for n in self.inputs if "c_in" in n.lower()), None)
 
-        # 출력 이름 그룹
         self.ho_name = next((n for n in self.outs if "h_out" in n.lower()), None)
         self.co_name = next((n for n in self.outs if "c_out" in n.lower()), None)
         self.reg_names = [n for n in self.outs if "reg" in n.lower()]
@@ -887,11 +833,11 @@ class ONNXTemporalRunner:
         self.cls_names.sort(key=_sort_key)
         self.num_scales = min(len(self.reg_names), len(self.obj_names), len(self.cls_names))
 
-        # 상태 버퍼
+        # hidden state 버퍼
         self.h_buf = None
         self.c_buf = None
 
-        # 상태 shape 메타
+        # shape 메타
         self.state_stride_hint = int(state_stride_hint)
         self.default_hidden_ch = int(default_hidden_ch)
         self.h_shape_meta = self._shape_from_input_meta(self.h_name)
@@ -914,7 +860,6 @@ class ONNXTemporalRunner:
         self.c_buf = None
 
     def _ensure_state(self, img_numpy_chw: np.ndarray):
-        # img: (1,3,H,W)
         _, _, H, W = img_numpy_chw.shape
         if self.h_name and self.h_buf is None:
             N, C, Hs, Ws = self.h_shape_meta
@@ -930,10 +875,7 @@ class ONNXTemporalRunner:
             self.c_buf = np.zeros((N, C, Hs, Ws), dtype=np.float32)
 
     def forward(self, img_numpy_chw):
-        """
-        img_numpy_chw: (1,3,H,W) float32 [0..1]
-        returns: list of (reg,obj,cls) as torch.Tensors (1,C,Hs,Ws)
-        """
+        """(1,3,H,W) float32 입력 -> list of (reg,obj,cls) torch.Tensor"""
         self._ensure_state(img_numpy_chw)
 
         feeds = {self.x_name: img_numpy_chw}
@@ -951,7 +893,7 @@ class ONNXTemporalRunner:
         if self.co_name:
             self.c_buf = out_map[self.co_name]
 
-        # PyTorch 디코더와 호환되는 포맷(list of (reg,obj,cls) torch.Tensor)
+        # (reg, obj, cls) torch.Tensor 리스트로 변환
         pred_list = []
         for rn, on, cn in zip(self.reg_names, self.obj_names, self.cls_names):
             pr = torch.from_numpy(out_map[rn])
@@ -961,9 +903,7 @@ class ONNXTemporalRunner:
         return pred_list
 
 
-# =========================
-# 시퀀스 키
-# =========================
+# --- 시퀀스 키
 def seq_key(file_path: str, mode: str) -> str:
     p = Path(file_path)
     if mode == "by_subdir":
@@ -985,9 +925,7 @@ def _sane_dims(L, W, args) -> bool:
     return True
 
 
-# =========================
-# 메인
-# =========================
+# --- 메인
 def main():
     ap = argparse.ArgumentParser("YOLO11 2.5D ONNX Temporal Inference (+GT & BEV via LUT)")
     ap.add_argument("--input-dir", type=str, required=True)
@@ -1024,7 +962,7 @@ def main():
     ap.add_argument("--labels-are-original-size", action="store_true", default=True)
 
     # BEV mode selection
-    ap.add_argument("--bev-mode", type=str, default="lut", choices=["lut", "homography"],
+    ap.add_argument("--bev-mode", type=str, default="homography", choices=["lut", "homography"],
                     help="BEV 변환 방식: lut (npz LUT) 또는 homography (txt/npy 호모그래피)")
 
     # BEV via LUT
@@ -1061,7 +999,7 @@ def main():
     ap.add_argument("--pitch-clamp-deg", type=float, default=30.0,
                     help="Clamp |pitch| to this maximum (deg)")
 
-    # --- sanity filters for 3D dims ---
+    # 3D 크기 필터
     ap.add_argument("--min-length", type=float, default=0.0)
     ap.add_argument("--max-length", type=float, default=100.0)
     ap.add_argument("--min-width",  type=float, default=0.0)
@@ -1142,7 +1080,7 @@ def main():
     metric_records = []
     total_gt = 0
 
-    # BEV 시각화/라벨 출력 (LUT 제공 시에만)
+    # BEV 출력 디렉토리
     metric_records_bev = []
     total_gt_bev = 0
     out_bev_img_dir = None
@@ -1243,7 +1181,7 @@ def main():
             bev_dets = []
 
             if args.bev_mode == "lut":
-                # === LUT (npz) 방식 ===
+                # LUT 방식
                 if pred_tris_orig:
                     pred_stack_orig = np.asarray(pred_tris_orig, dtype=np.float64)
                     pred_tris_bev_xy, pred_tris_bev_z, good_mask = tris_img_to_bev_by_lut(
@@ -1335,7 +1273,7 @@ def main():
                     gt_tris_bev = np.zeros((0, 3, 2), dtype=np.float32)
 
             else:
-                # === Homography (txt/npy) 방식 ===
+                # Homography 방식
                 H_img2ground = load_homography(args.calib_dir, name, homography_cache, invert=args.invert_calib)
                 if H_img2ground is None:
                     missing_h_names.add(os.path.splitext(name)[0])
@@ -1398,7 +1336,7 @@ def main():
                 )
                 metric_records_bev.extend(records_bev)
 
-    # ---- 전체 메트릭 출력 ----
+    # 전체 메트릭 출력
     if do_eval_2d:
         metrics = compute_detection_metrics(metric_records, total_gt)
         print("== 2D Eval (dataset-wide) ==")

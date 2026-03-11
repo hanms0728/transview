@@ -2,14 +2,14 @@ import numpy as np
 
 
 def parallelogram_from_triangle(p0, p1, p2):
-    """Restores four vertices of a parallelogram using three triangle points."""
+    """삼각형 3점 → 평행사변형 4꼭짓점"""
     p3 = 2 * p0 - p1
     p4 = 2 * p0 - p2
     return np.stack([p1, p2, p3, p4], axis=0)
 
 
 def aabb_of_poly4(poly4):
-    """Returns the axis-aligned bbox (x0, y0, w, h) for a 4-point polygon."""
+    """4점 폴리곤의 AABB (x0, y0, w, h)"""
     xs = poly4[:, 0]
     ys = poly4[:, 1]
     x0, y0 = xs.min(), ys.min()
@@ -35,11 +35,7 @@ def polygon_area(poly4: np.ndarray) -> float:
     return float(abs(np.cross(a, b)))
 
 def tiny_filter_on_dets(dets_img, min_area=20.0, min_edge=3.0):
-    """
-    아주 작은 평행사변형(너무 작은 면적/짧은 변)을 제거.
-    dets_img: decode_predictions가 반환한 단일 이미지의 detection 리스트.
-    각 item은 최소한 'tri' (3,2) 좌표를 포함한다고 가정. 없으면 필터 스킵.
-    """
+    """면적/변 길이가 너무 작은 detection 제거"""
     filtered = []
     for d in dets_img:
         tri = None

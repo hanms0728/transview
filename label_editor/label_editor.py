@@ -1,28 +1,7 @@
 #!/usr/bin/env python3
-"""Simple GUI label editor for reviewing the auto-label outputs.
+"""Auto-label 결과를 Matplotlib GUI로 검수/수정하는 도구.
 
-이 툴은 auto_labels/batch_root_inference.py 로 생성된 이미지/라벨 폴더를
-간단히 훑으면서 잘못 인식된 객체는 삭제하고, 누락된 객체는 추가할 수 있게
-해준다. Matplotlib 인터랙션을 사용하므로 별도의 GUI 프레임워크가 필요 없다.
-
-Usage
------
-python auto_labels/label_editor.py \
-    --root ./root_dataset \
-    --img-exts .jpg,.png \
-    --image-dirs images,images_gt,. \
-    --start-index 0
-
-Controls
---------
-* `n` / `right`  : 다음 이미지 (현재 라벨 자동 저장)
-* `p` / `left`   : 이전 이미지
-* `a`            : 추가 모드 토글 (센터, 첫 번째 포인트, 두 번째 포인트 순으로 3번 클릭)
-* `esc`          : 추가 모드 취소
-* `delete/backspace` : 선택된 라벨 삭제
-* `f`            : 선택한 라벨의 앞/뒤 꼭짓점 뒤집기
-* `s`            : 수동 저장
-* `q`            : 프로그램 종료 (종료 시에도 변경 사항 자동 저장)
+라벨 삭제·추가·드래그 편집을 지원하며, 키 조작은 하단 도움말 참고.
 """
 
 import argparse
@@ -37,7 +16,7 @@ from matplotlib import colors as mcolors
 from matplotlib.patches import Polygon, Rectangle
 
 
-# Use Korean-capable fonts if available and keep minus signs readable.
+# 한글 폰트 설정
 plt.rcParams["font.family"] = [
     "AppleGothic",
     "Apple SD Gothic Neo",
@@ -47,7 +26,7 @@ plt.rcParams["font.family"] = [
 ]
 plt.rcParams["axes.unicode_minus"] = False
 
-# Remove Matplotlib's default fullscreen toggle so "f" stays bound to label flipping.
+# "f" 키를 flip용으로 쓰기 위해 전체화면 단축키 해제
 fullscreen_keys = list(plt.rcParams.get("keymap.fullscreen", []))
 if fullscreen_keys:
     plt.rcParams["keymap.fullscreen"] = [
@@ -84,7 +63,7 @@ def lighten_color(color: str, amount: float = 0.3) -> str:
 
 
 def order_poly_ccw(poly4: np.ndarray) -> np.ndarray:
-    """Return a CCW-ordered quadrilateral for stable rendering."""
+    """사각형 꼭짓점을 반시계 방향으로 정렬."""
     c = poly4.mean(axis=0)
     ang = np.arctan2(poly4[:, 1] - c[1], poly4[:, 0] - c[0])
     idx = np.argsort(ang)
@@ -92,7 +71,7 @@ def order_poly_ccw(poly4: np.ndarray) -> np.ndarray:
 
 
 def parallelogram_from_pred_triangle(tri_pred: np.ndarray) -> np.ndarray:
-    """tri_pred: [cx,cy,f1x,f1y,f2x,f2y,(score?)] -> (4,2) float32(CCW)."""
+    """삼각형 예측값 -> 평행사변형 (4,2) CCW 좌표."""
     coords = np.asarray(tri_pred[:6], dtype=np.float32)
     cx, cy, x2, y2, x3, y3 = coords.tolist()
     x2m, y2m = 2 * cx - x2, 2 * cy - y2
@@ -488,7 +467,7 @@ class LabelEditorApp:
             self.labels_text.set_text("\n".join(display))
 
     def _plot_entry_points(self, idx: int, entry: LabelEntry) -> List:
-        """Draw front/center keypoints to help orientation checking."""
+        """앞면/중심 키포인트 표시."""
         markers = []
         is_sel = idx == self.selected_idx
         base_color = class_color(entry.class_id)

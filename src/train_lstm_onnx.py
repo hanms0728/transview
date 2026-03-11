@@ -29,7 +29,7 @@ from src.geometry_utils import parallelogram_from_triangle as _para
 from src.geometry_utils import aabb_of_poly4, iou_aabb_xywh, tiny_filter_on_dets, polygon_area
 from src.evaluation_utils import decode_predictions, evaluate_single_image, compute_detection_metrics
 
-# ───────────────── 추가: matmul/TF32 설정 (안정/속도)
+# matmul/TF32 설정
 try:
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.set_float32_matmul_precision("high")
@@ -38,9 +38,7 @@ except Exception:
 
 torch.backends.cudnn.benchmark = True
 
-# ---------------------------
 # 시드 고정
-# ---------------------------
 def set_seed(s=42):
     import random
     random.seed(s)
@@ -49,9 +47,7 @@ def set_seed(s=42):
     torch.cuda.manual_seed_all(s)
 set_seed(42)
 
-# ---------------------------
 # AMP 호환
-# ---------------------------
 try:
     from torch.amp import autocast as _autocast, GradScaler as _GradScaler
     def amp_autocast():
@@ -62,12 +58,7 @@ except Exception:
     def amp_autocast():
         return _autocast(enabled=torch.cuda.is_available())
 
-# ---------------------------
-# 안전 래퍼 & Tiny 필터
-# ---------------------------
-# ---------------------------
 # Geometry helpers (라벨 어사인용)
-# ---------------------------
 def _point_in_triangle(px, py, tri):
     Ax, Ay = tri[0, 0], tri[0, 1]
     Bx, By = tri[1, 0], tri[1, 1]
@@ -101,16 +92,9 @@ def _point_to_triangle_dist(px, py, tri):
     d3 = _point_to_segment_dist(px, py, Cx, Cy, Ax, Ay)
     return torch.minimum(d1, torch.minimum(d2, d3))
 
-# ---------------------------
 # Dataset (레이아웃 A/B 자동 지원)
-# ---------------------------
 class ParallelogramDataset(Dataset):
-    """
-    레이아웃 A:
-      <root>/images/**.jpg  <->  <root>/labels/**.txt  (상대경로 동일)
-    레이아웃 B:
-      <root>/<vid>/images/**.jpg  <->  <root>/<vid>/labels/**.txt
-    """
+    """A: <root>/images & labels, B: <root>/<vid>/images & labels 구조 지원."""
     def __init__(self, root, target_size=(1088, 1920), transform=None, data_layout="auto"):
         super().__init__()
         self.Ht, self.Wt = target_size
@@ -248,15 +232,9 @@ def collate_fn(batch):
     names = [b[2] for b in batch]
     return imgs, tgts, names
 
-# ---------------------------
 # 시퀀스 윈도우 래퍼
-# ---------------------------
 class SeqWindowDataset(Dataset):
-    """
-    ParallelogramDataset을 감싸 (T 프레임) 시퀀스 윈도우를 반환.
-    grouping: auto | by_subdir | by_prefix | flat
-    반환: imgs (T,3,H,W), tgts(list[T]), names(list[T]), vid
-    """
+    """T 프레임 시퀀스 윈도우 반환. grouping: auto|by_subdir|by_prefix|flat"""
     def __init__(self, base: ParallelogramDataset, grouping="auto", seq_len=4, seq_stride=1):
         super().__init__()
         self.base = base
@@ -432,9 +410,7 @@ def build_default_train_augment(target_size):
         keypoint_params=A.KeypointParams(format="xy", remove_invisible=False)
     )
 
-# ---------------------------
 # DSI (Vision Teacher Alignment)
-# ---------------------------
 class VisionTeacherWrapper(nn.Module):
     SUPPORTED = {"vit_b_16", "vit_l_16"}
 
@@ -546,9 +522,7 @@ def module_grad_l1(module: nn.Module) -> float:
         total += float(p.grad.detach().abs().sum().item())
     return total
 
-# ---------------------------
 # ConvRNN: ConvGRU / ConvLSTM (헤드 직전용)
-# ---------------------------
 class ConvGRUCell(nn.Module):
     def __init__(self, in_ch, hid_ch, k=3):
         super().__init__()
@@ -586,12 +560,7 @@ class ConvLSTMCell(nn.Module):
         return h, c
 
 class TemporalBlock(nn.Module):
-    """
-    헤드 직전에 꽂는 시계열 어댑터.
-    - bottleneck 1x1로 채널 축소 후 ConvRNN, 1x1로 복원.
-    - GRU/LSTM 선택, 층 수 1~2 지원.
-    - ONNX 대비용 step_with_state(x, state_in) 제공
-    """
+    """헤드 직전 시계열 어댑터. 1x1 bottleneck -> ConvRNN -> 1x1 복원."""
     def __init__(self, in_ch, hid_ch=256, layers=1, mode="gru"):
         super().__init__()
         assert mode in ("gru", "lstm")
@@ -639,7 +608,7 @@ class TemporalBlock(nn.Module):
         out = self.restore(out)
         return out
 
-    # ── ONNX 대비: 외부 상태 입출력 1 step
+    # ONNX용: 외부 상태 입출력 1 step
     def step_with_state(self, x, state_in: Optional[Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]]):
         z = self.reduce(x)
         if self.mode == "gru":
@@ -653,9 +622,7 @@ class TemporalBlock(nn.Module):
             out = self.restore(st[0])
             return out, st
 
-# ---------------------------
 # Model
-# ---------------------------
 class TriHead(nn.Module):
     def __init__(self, in_ch, nc, prior_p=0.20):
         super().__init__()
@@ -767,7 +734,7 @@ class YOLO11_2_5D(nn.Module):
         for t in self.temporal:
             if t is not None: t.detach_state()
 
-    # 내부상태 버전(학습/일반추론)
+    # 내부상태 버전 (학습/일반추론)
     def forward(self, x, use_temporal=True, return_deep_feature=False):
         feats_memory = []
         for m in self.backbone_neck:
@@ -803,12 +770,9 @@ class YOLO11_2_5D(nn.Module):
         outs = [head(f) for head,f in zip(self.heads, feat_list)]
         return (outs, deep_feat) if return_deep_feature else outs  # list of (reg,obj,cls)
 
-    # ── ONNX 대비: 외부 상태 입출력 버전 (last scale 전제)
+    # ONNX용: 외부 상태 입출력 (last scale 전제)
     def forward_external(self, x, state_in: Optional[List[Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]]]):
-        """
-        state_in: None 또는 [h] (GRU) / [(h,c)] (LSTM)  ; temporal_on_scales='last' 전제
-        return: (outs, state_out_same_form)
-        """
+        """state_in: None | [h](GRU) | [(h,c)](LSTM). temporal_on_scales='last' 전제."""
         assert (self.temporal is None) or (self.temporal_on_scales == "last"), \
             "ONNX 외부 상태 경로는 현재 temporal_on_scales='last'만 지원"
 
@@ -851,11 +815,9 @@ class YOLO11_2_5D(nn.Module):
         outs = [head(f) for head,f in zip(self.heads, feat_list)]
         return outs, state_out
 
-# ---------------------------
 # Loss
-# ---------------------------
 def chamfer_2pts(pred_2x2, gt_2x2):
-    # AMP 구간에서 FP16로 cdist가 overflow하는 것을 방지
+    # FP16 cdist overflow 방지
     pred_2x2 = pred_2x2.to(torch.float32)
     gt_2x2   = gt_2x2.to(torch.float32)
     d = torch.cdist(pred_2x2, gt_2x2, p=2)
@@ -939,7 +901,7 @@ class Strict2_5DLoss(nn.Module):
 
                 # 회귀용 프리컴퓨트(GPU): (Hs,Ws,3,2) -> FP32로 변환
                 pred_off_full = pred_reg_i.permute(1,2,0).contiguous().view(Hs, Ws, 3, 2).to(torch.float32)
-                # 폭주 방지용 클램프 (픽셀 단위 오프셋/stride 기준이므로 -64~64면 충분)
+                # 오프셋 클램프 (-64~64)
                 pred_off_full = torch.clamp(pred_off_full, -64.0, 64.0)
 
                 cls_pos_logits_gpu = [] if pred_cls_i.shape[0] == 1 else None
@@ -952,7 +914,7 @@ class Strict2_5DLoss(nn.Module):
                     neg_count += Hs*Ws
                     continue
 
-                # ====== GPU에서 모든 GT 처리 → (iy, ix) 모으기 ======
+                # GPU에서 GT 처리 → (iy, ix) 수집
                 px = centers_flat[:, 0].view(1, -1)
                 py = centers_flat[:, 1].view(1, -1)
                 A = gt[:, 0, :]; Bp = gt[:, 1, :]; C = gt[:, 2, :]
@@ -1006,21 +968,21 @@ class Strict2_5DLoss(nn.Module):
                     cls_list.append(cls_idx)
 
                 if len(pos_list_gpu) == 0:
-                    # 모든 GT가 선택 픽셀이 없었음
+                    # pos 없음
                     obj_loss += F.binary_cross_entropy_with_logits(
                         pred_obj_i, obj_t, pos_weight=self.obj_pos_weight, reduction='sum'
                     )
                     neg_count += Hs*Ws
                     continue
 
-                # ====== 한 번에 GPU로 모으기 ======
+                # GPU로 모으기
                 pos_idx = torch.cat(pos_list_gpu, dim=0)                  # (Npos,2) GPU
 
                 # 평탄 인덱스 (GPU)
                 flat_idx_gpu = (pos_idx[:,0] * Ws + pos_idx[:,1]).long()
                 obj_t.view(-1).scatter_(0, flat_idx_gpu, 1.0)
 
-                # ====== 회귀 손실(전부 GPU, FP32 강제) ======
+                # 회귀 손실 (GPU, FP32)
                 ix = pos_idx[:,1].float()
                 iy = pos_idx[:,0].float()
                 anchor_xy = torch.stack(((ix + 0.5) * stride, (iy + 0.5) * stride), dim=1).to(torch.float32)
@@ -1092,7 +1054,7 @@ class Strict2_5DLoss(nn.Module):
 
         total = reg_loss + obj_loss + cls_loss
 
-        # NaN/Inf 방어: 손실이 비정상이면 안전한 값으로 대체
+        # NaN/Inf 방어
         if not torch.isfinite(total):
             total = torch.tensor(0.0, device=dev)
 
@@ -1105,9 +1067,7 @@ class Strict2_5DLoss(nn.Module):
                 "pos": pos_count, "neg": neg_count}
         return total, logs
 
-# ---------------------------
-# Save/Resume 유틸 (양쪽 스케줄러 저장)
-# ---------------------------
+# Save/Resume
 def save_ckpt(path, epoch, model, opt_bb, opt_hd, sched_bb, sched_hd, scaler, best_val, extra: dict = None):
     ckpt = {
         "epoch": epoch,
@@ -1133,9 +1093,7 @@ def load_ckpt(path, device, model, opt_bb, opt_hd, sched_bb, sched_hd, scaler):
     best = ckpt.get("best_val", -1.0)
     return epoch, best
 
-# ---------------------------
-# (추가) 옵티마에 실제 grad가 있는지 체크
-# ---------------------------
+# grad 유무 체크
 def _opt_has_grad(opt):
     for g in opt.param_groups:
         for p in g["params"]:
@@ -1150,9 +1108,7 @@ def _sanitize_grads(module: nn.Module):
             if not torch.isfinite(p.grad).all():
                 p.grad.data = torch.nan_to_num(p.grad.data, nan=0.0, posinf=0.0, neginf=0.0)
 
-# ---------------------------
-# (추가) ONNX Export Helpers
-# ---------------------------
+# ONNX Export Helpers
 class _ONNXWrapNone(nn.Module):
     def __init__(self, core: YOLO11_2_5D):
         super().__init__()
@@ -1193,7 +1149,7 @@ def export_epoch_onnx(model: YOLO11_2_5D, onnx_dir: Path, onnx_name: str,
 
     x = torch.zeros(1,3,H,W, device=device)
 
-    # 래퍼/입력/동적축 지정
+    # 래퍼/입력/동적축
     if temporal == "none" or model.temporal is None:
         wrapper = _ONNXWrapNone(model).to(device)
         inputs = (x,)
@@ -1228,9 +1184,7 @@ def export_epoch_onnx(model: YOLO11_2_5D, onnx_dir: Path, onnx_name: str,
     )
     print(f"[ONNX] saved: {out_path}")
 
-# ---------------------------
 # Train
-# ---------------------------
 def main():
     parser = argparse.ArgumentParser(description="Train YOLO11 2.5D (paper-accurate, cls@pos-only, fast val)")
     parser.add_argument("--train-root", type=str, default="./output_all")
@@ -1300,7 +1254,7 @@ def main():
     parser.add_argument("--no-train-augment", action="store_false", dest="train_augment",
                         help="증강 비활성화")
 
-    # ───────── Temporal 옵션 ─────────
+    # Temporal 옵션
     parser.add_argument("--temporal", type=str, default="none",
                         choices=["none", "gru", "lstm"],
                         help="헤드 앞 시계열 모듈 선택 (none|gru|lstm)")
@@ -1314,7 +1268,7 @@ def main():
     parser.add_argument("--temporal-reset-per-batch", action="store_true",
                         help="학습 시 배치마다 상태 리셋(셔플 학습 권장). 검증/실시간 스트림은 끄는 게 좋음.")
 
-    # ───────── Sequence 옵션 ─────────
+    # Sequence 옵션
     parser.add_argument("--seq-len", type=int, default=1, help="시퀀스 길이 T (ConvRNN 학습은 T>=4 권장)")
     parser.add_argument("--seq-stride", type=int, default=1, help="윈도우 간 간격")
     parser.add_argument("--seq-grouping", type=str, default="auto",
@@ -1326,7 +1280,7 @@ def main():
                         help="윈도우를 섞지 않고 입력 순서를 유지하며 동일 vid에서는 hidden state를 이어감")
     parser.add_argument("--no-seq-streaming", action="store_false", dest="seq_streaming",
                         help="기존 방식처럼 윈도우 shuffle + 배치 단위 state 초기화")
-    # ───────── DSI / GAM 옵션 ─────────
+    # DSI / GAM 옵션
     parser.add_argument("--dsi", action="store_true", default=True,
                         help="Vision-Teacher 기반 Deep Semantic Injection 사용")
     parser.add_argument("--no-dsi", action="store_false", dest="dsi",
@@ -1353,7 +1307,7 @@ def main():
 
     args = parser.parse_args()
 
-    # 모델 이름 stem 추출 (yolo11m.pt -> yolo11m, weights/custom.pt -> custom)
+    # 모델 이름 stem
     model_stem = Path(args.yolo_weights).stem
     # 저장 경로 구성
     save_dir = Path(args.save_dir).expanduser().resolve()
@@ -1400,7 +1354,7 @@ def main():
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # ── Dataset / DataLoader (A/B 자동 판별)
+    # Dataset / DataLoader
     train_transform = None
     if args.train_augment:
         train_transform = build_default_train_augment(IMG_SIZE)
@@ -1450,7 +1404,7 @@ def main():
                                     collate_fn=collate_fn, num_workers=4, pin_memory=True,
                                     persistent_workers=True)
 
-    # ── Model
+    # Model
     model = YOLO11_2_5D(
         yolo11_path=args.yolo_weights,
         num_classes=NUM_CLASSES,
@@ -1531,7 +1485,7 @@ def main():
         if isinstance(sd, dict) and "model" in sd:
             sd = sd["model"]
 
-        # 클래스 수가 다를 때만 cls 헤드를 버린다.
+        # cls 수 불일치 시 헤드 제외
         ckpt_classes = None
         for k, v in sd.items():
             if k.startswith("heads.") and ".cls." in k and hasattr(v, "shape") and len(v.shape) > 0:
@@ -1722,16 +1676,15 @@ def main():
 
                 if train:
                     if bad_batch and args.skip_bad_batch:
-                        # 배치 스킵: grad 초기화 후 상태 리셋
+                        # 배치 스킵
                         opt_bb.zero_grad(set_to_none=True); opt_hd.zero_grad(set_to_none=True)
                         if args.temporal != "none":
                             model.reset_temporal()
                             prev_stream_key = None
-                        # 진행표시만 업데이트하고 다음 배치로
                         pbar.set_postfix_str("skip bad batch (NaN/Inf)")
                         continue
 
-                    # ---- GradScaler 안전 스텝 (freeze 대응) ----
+                    # GradScaler 스텝
                     if (not args.tbptt_detach) and loss_seq is not None and steps_seq > 0:
                         scaler.scale(loss_seq / max(1, steps_seq)).backward()
                     has_bb = _opt_has_grad(opt_bb)
@@ -1758,7 +1711,7 @@ def main():
                     if has_bb: scaler.step(opt_bb)
                     if has_hd: scaler.step(opt_hd)
                     scaler.update()
-                    # -------------------------------------------
+                    # ---
 
                 # 평균 로그로 표시
                 logs_mean = {k:(v/ T if isinstance(v,(int,float)) else v) for k,v in logs_accum.items()}
@@ -1795,7 +1748,7 @@ def main():
                             prev_stream_key = None
                         continue
 
-                    # ---- GradScaler 안전 스텝 (freeze 대응) ----
+                    # GradScaler 스텝
                     has_bb = _opt_has_grad(opt_bb)
                     has_hd = _opt_has_grad(opt_hd)
 
@@ -1819,7 +1772,7 @@ def main():
                     if has_bb: scaler.step(opt_bb)
                     if has_hd: scaler.step(opt_hd)
                     scaler.update()
-                    # -------------------------------------------
+                    # ---
 
                 else:
                     if val_mode == "loss":
@@ -1877,7 +1830,7 @@ def main():
         grad_ratio_avg = (grad_ratio_sum / grad_ratio_count) if grad_ratio_count > 0 else None
         return avg_loss, metrics, grad_ratio_avg
 
-    # --------- Loop ---------
+    # Loop
     for ep in range(start_ep, EPOCHS):
         train_loss, _, train_ratio = run_epoch(train_loader, train=True, epoch_idx=ep, eval_cfg=eval_cfg, val_mode=args.val_mode)
         if args.dsi and args.dsi_gam and train_ratio is not None:
@@ -1944,7 +1897,7 @@ def main():
         )
         print(f"  -> saved {pth_path} and {ckpt_path}")
 
-        # ── ONNX 내보내기 (every epoch)
+        # ONNX 내보내기
         try:
             if args.temporal_on_scales != "last" and args.temporal != "none":
                 print("[ONNX] Skip: temporal_on_scales='all' 내보내기는 아직 미지원")

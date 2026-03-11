@@ -1,19 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-PLY 글로벌 포인트클라우드 + BEV 라벨(2.5D/3D) + 차량 GLB 메쉬 오버레이 (자유이동, 고성능 버전)
-- Open3D O3DVisualizer 경로: PLY는 1회 추가, 차량은 사전 슬롯만 생성 → 매 프레임 transform/visibility만 갱신
-- 레거시 Visualizer로 폴백 가능(레거시는 transform 즉시 갱신 API 제한으로 add/remove 방식)
-- BEV 라벨 포맷(신규): "class cx cy cz length width yaw_deg pitch_deg roll_deg" (space 구분)
-  (구버전 6열 "class cx cy length width yaw_deg"도 자동 인식하며 cz/pitch/roll은 0으로 보정)
-조작(신 GUI일 때):
-- 마우스/휠: 자유 이동/줌
-- A / D : 이전 / 다음 프레임
-- Space  : 재생 / 일시정지
-- Q      : 창 닫아 종료
-
-- --height-scale: Z축 높이 = width * height_scale (시각화 높이 및 바닥 접지에 동일 적용)
-"""
+"""PLY 포인트클라우드 위에 BEV 라벨 기반으로 차량 GLB 메쉬를 오버레이하는 3D 뷰어."""
 
 import os
 import glob
@@ -25,13 +12,8 @@ import numpy as np
 import open3d as o3d
 import threading
 
-# ---------------------- 유틸 ----------------------
 def load_labels_dir(label_dir: str):
-    """디렉토리에서 *.txt 라벨을 정렬 로드.
-    - 신규 9열: class cx cy cz length width yaw pitch roll
-    - 구버전 6열: class cx cy length width yaw  (cz=0, pitch=0, roll=0으로 보정)
-    빈 파일/읽기 실패는 스킵.
-    """
+    """라벨 디렉토리 로드 (9열/6열 자동 인식)"""
     files = sorted(glob.glob(os.path.join(label_dir, "*.txt")))
     frames = []
     for f in files:
@@ -40,11 +22,9 @@ def load_labels_dir(label_dir: str):
                 warnings.simplefilter("ignore")
                 arr = np.loadtxt(f, ndmin=2)
             if arr.size == 0:
-                # Append empty frame placeholder for empty files
                 frames.append((f, np.zeros((0, 9), dtype=np.float32)))
                 continue
             if arr.shape[1] < 6:
-                # Append empty frame placeholder for invalid shape
                 frames.append((f, np.zeros((0, 9), dtype=np.float32)))
                 continue
             arr = arr.astype(np.float32)
@@ -62,15 +42,13 @@ def load_labels_dir(label_dir: str):
                 arr = np.concatenate([cls_cx_cy, zeros[:, :1], L, W, yaw, zeros[:, 1:]], axis=1)
             frames.append((f, arr))
         except Exception:
-            # Append empty frame placeholder for failed load
             frames.append((f, np.zeros((0, 9), dtype=np.float32)))
     return frames
 
 def unitize_mesh(mesh: o3d.geometry.TriangleMesh):
-    """메쉬를 중심 정렬 + 최대 변 1.0로 정규화 (비율 유지)."""
+    """메쉬 중심 정렬 + 최대변 1.0 정규화"""
     mesh = mesh.compute_vertex_normals()
-    # 일부 GLB/OBJ는 Y-up 축을 사용한다. 우리 장면은 Z-up을 가정하므로
-    # 필요 시 고정 보정 회전을 적용한다.
+    # GLB가 Y-up이면 Z-up으로 보정
     try:
         APPLY_Y_UP_TO_Z_UP = True  # 필요시 False로
     except NameError:
@@ -80,7 +58,7 @@ def unitize_mesh(mesh: o3d.geometry.TriangleMesh):
     scale = 1.0 / max(1e-9, extent.max())
     mesh.translate(-bb.get_center())
     mesh.scale(scale, center=(0, 0, 0))
-    # Y-up(차문이 바닥으로 가는 증상) → Z-up 보정: +90deg around X
+    # Y-up → Z-up 보정
     if APPLY_Y_UP_TO_Z_UP:
         Rx90 = mesh.get_rotation_matrix_from_axis_angle([math.radians(90.0), 0.0, 0.0])
         mesh.rotate(Rx90, center=(0, 0, 0))
@@ -89,11 +67,7 @@ def unitize_mesh(mesh: o3d.geometry.TriangleMesh):
 def build_unit_to_world_T(length, width, yaw_deg, center_xyz,
                           pitch_deg: float = 0.0, roll_deg: float = 0.0,
                           up_scale_from_width=0.5):
-    """
-    유닛(최대변 1.0) → 차량 크기/자세 → 월드로 변환하는 4x4 행렬.
-    길이≈X, 폭≈Y, 높이≈폭*비율 로 가정(CARLA 축 관례).
-    회전 순서: Rz(yaw) * Ry(pitch) * Rx(roll)  (Yaw→Pitch→Roll).
-    """
+    """유닛 메쉬 → 월드 좌표 변환 4x4 행렬 (Rz·Ry·Rx 순)"""
     sx = max(1e-4, float(length))
     sy = max(1e-4, float(width))
     sz = max(1e-4, float(width) * up_scale_from_width)
@@ -134,7 +108,6 @@ def build_unit_to_world_T(length, width, yaw_deg, center_xyz,
     return T_model
 
 def build_kdtree_for_z(cloud: o3d.geometry.PointCloud):
-    """z 추정용 KDTree와 numpy xyz 반환."""
     pts = np.asarray(cloud.points)
     if pts.shape[0] == 0:
         return None, None
@@ -146,7 +119,7 @@ def estimate_z_from_cloud(xy: np.ndarray,
                           xyz_pts: np.ndarray,
                           radius: float,
                           default_z: float = 0.0):
-    """(x,y) 근방 반경 내 포인트 z 중앙값으로 추정."""
+    """(x,y) 근방 포인트의 z 중앙값"""
     if xy.ndim == 1:
         xy = xy.reshape(1, 2)
     zs = []
@@ -160,13 +133,11 @@ def estimate_z_from_cloud(xy: np.ndarray,
             zs.append(float(np.median(zvals)))
     return np.array(zs, dtype=np.float32).reshape(-1)
 
-# ---- 기본 PLY Y축 뒤집기용 Transform ----
 def _flip_y_T():
     T = np.eye(4, dtype=np.float64)
     T[1, 1] = -1.0
     return T
 
-# ---------------------- 메인 ----------------------
 def main():
     ap = argparse.ArgumentParser("Overlay GLB vehicles on global PLY with BEV labels (free-cam, optimized)")
     ap.add_argument("--global-ply", type=str, required=True, help="fused/global_fused.ply")
@@ -376,7 +347,6 @@ def main():
                     pass
 
         def apply_frame(idx: int):
-            """프레임 i의 디텍션들을 사전 슬롯에 transform/visibility로 반영"""
             # 먼저 모든 슬롯을 숨김(유령 잔상 방지)
             for nm in car_names:
                 _set_visible(nm, False)

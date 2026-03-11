@@ -2,6 +2,8 @@
 
 Matplotlib 기반 2.5D BEV 라벨 수동 편집 도구
 
+![label_editor](../docs/images/label_editor.png)
+
 ## 사용법
 
 ```bash
@@ -13,7 +15,7 @@ python label_editor/label_editor.py --root <데이터셋 경로>
 
 ```bash
 python label_editor/label_editor.py \
-    --root ./dataset_example/dataset_example_carla_coshow_9
+    --root ./dataset_example/ces_real
 ```
 
 </details>
