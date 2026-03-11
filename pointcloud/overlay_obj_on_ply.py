@@ -667,13 +667,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-"""
-python ./pointcloud/overlay_obj_on_ply.py \
-  --global-ply ./pointcloud/cloud_rgb_ply/cloud_rgb_9.ply \
-  --bev-label-dir ./dataset_exmple_pointcloud_9/bev_labels \
-  --vehicle-glb ./pointcloud/car.glb \
-  --fps 30 --play --bg-dark \
-  --force-legacy  
-"""

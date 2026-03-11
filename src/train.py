@@ -1255,7 +1255,7 @@ def main():
                         help="증강 비활성화")
 
     # Temporal 옵션
-    parser.add_argument("--temporal", type=str, default="none",
+    parser.add_argument("--temporal", type=str, default="lstm",
                         choices=["none", "gru", "lstm"],
                         help="헤드 앞 시계열 모듈 선택 (none|gru|lstm)")
     parser.add_argument("--temporal-hidden", type=int, default=256,
@@ -1269,7 +1269,7 @@ def main():
                         help="학습 시 배치마다 상태 리셋(셔플 학습 권장). 검증/실시간 스트림은 끄는 게 좋음.")
 
     # Sequence 옵션
-    parser.add_argument("--seq-len", type=int, default=1, help="시퀀스 길이 T (ConvRNN 학습은 T>=4 권장)")
+    parser.add_argument("--seq-len", type=int, default=4, help="시퀀스 길이 T (ConvRNN 학습은 T>=4 권장)")
     parser.add_argument("--seq-stride", type=int, default=1, help="윈도우 간 간격")
     parser.add_argument("--seq-grouping", type=str, default="auto",
                         choices=["auto","by_subdir","by_prefix","flat"],
@@ -1935,56 +1935,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-
-python -m src.train_lstm_onnx \
-  --train-root /media/ubuntu24/T7/output_lstm \
-  --val-root /media/ubuntu24/T7/val_dataset_lstm/cam2_-30 \
-  --data-layout auto \
-  --yolo-weights yolo11m.pt \
-  --weights onnx/base_pth/yolo11m_2_5d_epoch_005.pth \
-  --temporal lstm --temporal-hidden 256 --temporal-layers 1 --temporal-on-scales last \
-  --seq-len 6 --seq-stride 2 --seq-grouping auto \
-  --batch 2 --start-epoch 5 \
-  --num-classes 1 \
-  --save-dir runs/1206_lstm
-
-
-python -m src.train_lstm_onnx \
-  --train-root /media/ubuntu24/T7/val_dataset_lstm \
-  --val-root /media/ubuntu24/T7/val_dataset_lstm/cam2_-30 \
-  --data-layout auto \
-  --yolo-weights yolo11m.pt \
-  --weights onnx/base_pth/yolo11m_2_5d_epoch_005.pth \
-  --temporal lstm --temporal-hidden 256 --temporal-layers 1 --temporal-on-scales last \
-  --seq-len 6 --seq-stride 2 --seq-grouping auto \
-  --batch 2 --start-epoch 5 \
-  --num-classes 1 \
-  --save-dir runs/1206_lstm
-
-
-
-
-
- python -m src.train_lstm_onnx \
-  --train-root /media/ubuntu24/T7/carla_dataset_lstm_1209/train \
-  --val-root   /media/ubuntu24/T7/carla_dataset_lstm_1209/val \
-  --data-layout auto \
-  --yolo-weights yolo11m.pt \
-  --weights onnx/base_pth/yolo11m_2_5d_epoch_005.pth \
-  --temporal lstm --temporal-hidden 256 --temporal-layers 1 --temporal-on-scales last \
-  --seq-len 6 --seq-stride 1 --seq-grouping by_subdir \
-  --batch 6 --val-batch 4 \
-  --no-seq-streaming --tbptt-detach --temporal-reset-per-batch \
-  --freeze-bb-epochs 2 \
-  --lr-bb 2e-4 --lr-hd 6e-4 --lr-min 1e-4 \
-  --num-classes 3 \
-  --score-mode obj --eval-conf 0.35 \
-  --train-augment --dsi \
-  --skip-bad-batch --max-grad-norm 10.0 \
-  --save-dir runs/carla_lstm_1209
- 
-
-
-"""

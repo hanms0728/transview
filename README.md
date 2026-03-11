@@ -9,6 +9,15 @@
 | ![carla_base](docs/images/carla_base.jpg) | ![ces_real](docs/images/ces_real.jpg) |
 | Homography BEV | 멀티클래스 감지 |
 
+### 성능 (예제 데이터셋 30프레임)
+
+| 모델 | Precision | Recall | mAP@50 | mAOE(°) |
+|------|-----------|--------|--------|---------|
+| `carla_base` | 1.0000 | 0.9244 | 0.9244 | 0.78 |
+| `ces_real` (Sim2Real) | 0.9085 | 0.8613 | 0.8510 | 2.75 |
+
+> 전체 결과 및 모델별 상세 정보는 [docs/dataset.md](docs/dataset.md) 참고
+
 ## 주요 기능
 
 - **2.5D Object Detection** — YOLO11 백본 + 커스텀 2.5D 헤드 (center + front corners 3점 표현)
@@ -31,18 +40,18 @@
 
 ```
 ├── src/
-│   ├── train_lstm_onnx.py                # 학습 (YOLO11 + Temporal ConvLSTM)
-│   ├── inference_lstm_onnx_pointcloud.py  # 추론 (ONNX Runtime)
-│   ├── geometry_utils.py                 # 기하 연산 유틸리티
-│   └── evaluation_utils.py              # 평가 메트릭 (Polygon IoU)
+│   ├── train.py              # 학습 (YOLO11 + Temporal ConvLSTM)
+│   ├── inference.py          # 추론 (ONNX Runtime)
+│   ├── geometry_utils.py     # 기하 연산 유틸리티
+│   └── evaluation_utils.py   # 평가 메트릭 (Polygon IoU)
 ├── label_editor/
-│   └── label_editor.py                  # 라벨 편집 도구
+│   └── label_editor.py       # 라벨 편집 도구
 ├── pointcloud/
-│   ├── overlay_obj_on_ply.py            # 3D 시각화 (PLY + GLB 오버레이)
-│   └── car.glb                          # 차량 3D 메쉬
-├── dataset_example/                       # 예제 데이터셋 (CARLA, CES)
-├── onnx/                                # ONNX 모델 (추론용)
-├── pth/                                 # PTH 가중치 (학습/파인튜닝용)
+│   ├── overlay_obj_on_ply.py  # 3D 시각화 (PLY + GLB 오버레이)
+│   └── car.glb                # 차량 3D 메쉬
+├── dataset_example/            # 예제 데이터셋 (CARLA, CES)
+├── onnx/                       # ONNX 모델 (추론용)
+├── pth/                        # PTH 가중치 (학습/파인튜닝용)
 └── environment.yml
 ```
 
@@ -57,14 +66,14 @@ conda activate transview_env
 
 ## 사용법
 
-학습, 추론 명령어 및 데이터셋 형식은 [docs/usage.md](docs/usage.md) 참고.
+학습/추론 명령어는 [docs/usage.md](docs/usage.md), 데이터셋/모델 정보는 [docs/dataset.md](docs/dataset.md) 참고.
 
 ```bash
 # 학습
-python -m src.train_lstm_onnx --train-root <데이터셋 경로> --temporal lstm --seq-len 4
+python -m src.train --train-root <데이터셋 경로> --temporal lstm --seq-len 4
 
 # 추론 (투영행렬 txt)
-python -m src.inference_lstm_onnx_pointcloud --input-dir <이미지 경로> --weights <ONNX 경로> --calib-dir <3x3 투영행렬 경로>
+python -m src.inference --input-dir <이미지 경로> --weights <ONNX 경로> --calib-dir <3x3 투영행렬 경로>
 ```
 
 ## 기술 스택

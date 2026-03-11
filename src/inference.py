@@ -1,4 +1,4 @@
-# inference_lstm_onnx_pointcloud.py
+# inference.py
 # YOLO11 2.5D temporal inference with ONNX (ConvLSTM/GRU hidden-state carry + seq reset)
 # + BEV by per-pixel LUT (npz) with bilinear sampling (X,Y,Z) & robust masks
 
@@ -20,6 +20,7 @@ from src.evaluation_utils import (
     decode_predictions,
     evaluate_single_image,
     compute_detection_metrics,
+    compute_detection_metrics_per_class,
     orientation_error_deg,
     iou_polygon,
 )
@@ -109,9 +110,9 @@ def load_gt_triangles(label_path: str, return_cls: bool = False):
     with open(label_path, "r") as f:
         for line in f:
             p = line.strip().split()
-            if len(p) != 7:
+            if len(p) < 7:
                 continue
-            cls_id, p0x, p0y, p1x, p1y, p2x, p2y = p
+            cls_id, p0x, p0y, p1x, p1y, p2x, p2y = p[:7]
             tris.append([[float(p0x), float(p0y)],
                          [float(p1x), float(p1y)],
                          [float(p2x), float(p2y)]])
@@ -1079,10 +1080,12 @@ def main():
 
     metric_records = []
     total_gt = 0
+    total_gt_by_class = {}
 
     # BEV 출력 디렉토리
     metric_records_bev = []
     total_gt_bev = 0
+    total_gt_bev_by_class = {}
     out_bev_img_dir = None
     out_bev_mix_dir = None
     out_bev_lab_dir = None
@@ -1175,6 +1178,8 @@ def main():
                 )
                 metric_records.extend(records)
                 total_gt += gt_for_eval.shape[0]
+                for c in gt_cls_eval:
+                    total_gt_by_class[int(c)] = total_gt_by_class.get(int(c), 0) + 1
 
         # ---- BEV ----
         if use_bev:
@@ -1345,6 +1350,12 @@ def main():
         print("mAP@50:     {:.4f}".format(metrics["map50"]))
         print("mAOE(deg):  {:.2f}".format(metrics["mAOE_deg"]))
 
+        if len(total_gt_by_class) > 1:
+            per_cls = compute_detection_metrics_per_class(metric_records, total_gt_by_class)
+            for cls_id, m in per_cls.items():
+                print(f"  [class {cls_id}] Prec={m['precision']:.4f}  Rec={m['recall']:.4f}  "
+                      f"AP@50={m['map50']:.4f}  AOE={m['mAOE_deg']:.2f}°")
+
     if use_bev:
         metrics_bev = (
             compute_detection_metrics(metric_records_bev, total_gt_bev)
@@ -1370,18 +1381,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-"""
-python -m src.inference_lstm_onnx_pointcloud \
-  --input-dir ./dataset_example/dataset_example_carla_coshow_9/images\
-  --output-dir ./inference_results_npz_9 \
-  --weights ./onnx/yolo11m_2_5d_carla_coshow.onnx \
-  --temporal lstm --seq-mode by_prefix --reset-per-seq \
-  --conf 0.8 --nms-iou 0.2 --topk 50 \
-  --gt-label-dir ./dataset_example_pointcloud_9/labels \
-  --lut-path ./pointcloud/cloud_rgb_npz/cloud_rgb_9.npz \
-  --bev-scale 1.0 \
-  --lut-min-corners 3 \
-  --lut-boundary-eps 1e-3
-"""

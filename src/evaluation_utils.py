@@ -478,3 +478,28 @@ def compute_detection_metrics(records, total_gt):
     mAOE = float(np.mean(orient_errors)) if orient_errors else float('nan')
 
     return {"precision": precision, "recall": recall, "map50": map50, "mAOE_deg": mAOE}
+
+
+def compute_detection_metrics_per_class(records, total_gt_by_class):
+    """클래스별 detection metrics 계산.
+
+    Args:
+        records: list of (score, tp, iou, orient_err, class_id)
+        total_gt_by_class: dict {class_id: count}
+
+    Returns:
+        dict {class_id: {precision, recall, map50, mAOE_deg}}
+    """
+    from collections import defaultdict
+    records_by_class = defaultdict(list)
+    for r in records:
+        cls_id = r[4] if len(r) > 4 else 0
+        records_by_class[cls_id].append(r)
+
+    all_classes = set(records_by_class.keys()) | set(total_gt_by_class.keys())
+    results = {}
+    for cls_id in sorted(all_classes):
+        cls_records = records_by_class.get(cls_id, [])
+        cls_gt = total_gt_by_class.get(cls_id, 0)
+        results[cls_id] = compute_detection_metrics(cls_records, cls_gt)
+    return results

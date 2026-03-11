@@ -4,12 +4,12 @@
 
 ```bash
 # 처음부터 학습
-python -m src.train_lstm_onnx \
+python -m src.train \
     --train-root <데이터셋 경로> \
     --temporal lstm --seq-len 4
 
 # 이어서 학습 (체크포인트에서 재개)
-python -m src.train_lstm_onnx \
+python -m src.train \
     --train-root <데이터셋 경로> \
     --temporal lstm --seq-len 4 \
     --resume <체크포인트 경로>
@@ -17,11 +17,13 @@ python -m src.train_lstm_onnx \
 
 결과 저장: `./results/train` (모델 가중치, ONNX, 학습 로그)
 
+> `--resume`으로 이어서 학습 시 `.pth` 체크포인트 필요. `pth/carla_base.pth`는 CARLA 시뮬레이션 ~20만장으로 사전학습된 가중치로, 파인튜닝 시 베이스로 사용.
+
 <details>
 <summary>예제</summary>
 
 ```bash
-python -m src.train_lstm_onnx \
+python -m src.train \
     --train-root ./dataset_example/carla_base \
     --temporal lstm --seq-len 4
 ```
@@ -33,8 +35,8 @@ python -m src.train_lstm_onnx \
 
 | 옵션 | 설명 | 기본값 |
 |------|------|--------|
-| `--temporal` | 시계열 모듈 (`none`, `lstm`, `gru`) | `none` |
-| `--seq-len` | 시퀀스 길이 (ConvRNN은 4 이상 권장) | `1` |
+| `--temporal` | 시계열 모듈 (`none`, `lstm`, `gru`) | `lstm` |
+| `--seq-len` | 시퀀스 길이 (ConvRNN은 4 이상 권장) | `4` |
 | `--num-classes` | 클래스 수 | `1` |
 | `--epochs` | 학습 에포크 | `60` |
 | `--batch` | 배치 크기 | `4` |
@@ -49,13 +51,13 @@ python -m src.train_lstm_onnx \
 
 ```bash
 # 투영행렬(txt) 방식 — 기본
-python -m src.inference_lstm_onnx_pointcloud \
+python -m src.inference \
     --input-dir <이미지 경로> \
     --weights <ONNX 모델 경로> \
     --calib-dir <3x3 투영행렬 경로>
 
 # LUT(npz) 방식
-python -m src.inference_lstm_onnx_pointcloud \
+python -m src.inference \
     --input-dir <이미지 경로> \
     --weights <ONNX 모델 경로> \
     --bev-mode lut --lut-path <LUT npz 경로>
@@ -63,24 +65,26 @@ python -m src.inference_lstm_onnx_pointcloud \
 
 결과 저장: `./results/inference` (2D 이미지, BEV 이미지, 라벨)
 
+> `--gt-label-dir` 지정 시 mAP, mAOE 등 평가 지표 출력. 생략 시 추론만 수행.
+
 <details>
 <summary>예제 (3가지 시나리오)</summary>
 
 ```bash
 # 1. CARLA 기본 — 투영행렬(txt) 방식 (기본)
-python -m src.inference_lstm_onnx_pointcloud \
+python -m src.inference \
     --input-dir ./dataset_example/carla_base/images \
     --weights ./onnx/carla_base.onnx \
     --calib-dir ./dataset_example/carla_base/calib
 
 # 2. CES 실환경 (Sim2Real) — 투영행렬(txt) 방식
-python -m src.inference_lstm_onnx_pointcloud \
+python -m src.inference \
     --input-dir ./dataset_example/ces_real/images \
     --weights ./onnx/ces_real.onnx \
     --calib-dir ./dataset_example/ces_real/calib
 
 # 3. CARLA 포인트클라우드 — LUT(npz) 방식
-python -m src.inference_lstm_onnx_pointcloud \
+python -m src.inference \
     --input-dir ./dataset_example/carla_pointcloud/images \
     --weights ./onnx/carla_pointcloud.onnx \
     --bev-mode lut \
@@ -107,18 +111,4 @@ python -m src.inference_lstm_onnx_pointcloud \
 
 </details>
 
-## 데이터셋 형식
-
-```
-dataset_root/
-├── images/      # 입력 이미지 (.jpg, .png)
-├── labels/      # 2.5D 라벨 (txt)
-├── calib/       # 3x3 투영행렬 (txt)
-└── bev_labels/  # BEV 라벨 (선택)
-```
-
-**라벨 형식** (space 구분):
-```
-class cx cy length width yaw_deg                          # 6열
-class cx cy cz length width yaw_deg pitch_deg roll_deg    # 9열
-```
+데이터셋 형식, 라벨 형식, 제공 모델/데이터셋 정보는 [dataset.md](dataset.md) 참고.
